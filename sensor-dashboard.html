@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>传感器仪表盘</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --border: rgba(255,255,255,0.08);
+    --text: #f0f0f0;
+    --muted: rgba(255,255,255,0.4);
+    --green: #00e676;
+    --red: #ff5252;
+    --blue: #448aff;
+    --amber: #ffab40;
+    --ax-color: #ff5252;
+    --ay-color: #00e676;
+    --az-color: #448aff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; overflow-x: hidden; }
+  body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Camera */
+  .cam-section { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; width: 100%; border: 1px solid var(--border); }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam-hud { position: absolute; inset: 0; pointer-events: none; }
+  .cam-corner { position: absolute; width: 18px; height: 18px; border-color: var(--green); border-style: solid; opacity: 0.8; }
+  .cam-corner.tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; }
+  .cam-corner.tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; }
+  .cam-corner.bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; }
+  .cam-corner.br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; }
+  .cam-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 20px; height: 20px; }
+  .cam-crosshair::before, .cam-crosshair::after { content: ''; position: absolute; background: rgba(0,230,118,0.6); }
+  .cam-crosshair::before { width: 100%; height: 1px; top: 50%; left: 0; }
+  .cam-crosshair::after { width: 1px; height: 100%; left: 50%; top: 0; }
+  .cam-label { position: absolute; top: 10px; left: 10px; font-size: 10px; color: var(--green); letter-spacing: 0.15em; }
+  .cam-status-bar { position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 12px; background: linear-gradient(transparent, rgba(0,0,0,0.7)); display: flex; justify-content: space-between; align-items: center; }
+  .cam-status-text { font-size: 10px; color: var(--muted); letter-spacing: 0.08em; }
+  .rec-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--red); margin-right: 5px; animation: blink 1.2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .no-cam-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--muted); font-size: 12px; }
+
+  /* Cards grid */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .card-head { font-size: 9px; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.err { background: var(--red); }
+
+  .axis-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .axis-lbl { font-size: 10px; color: var(--muted); width: 14px; flex-shrink: 0; }
+  .axis-bar-bg { flex: 1; height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+  .axis-bar { height: 100%; border-radius: 2px; width: 0%; transition: width 0.1s linear; }
+  .axis-val { font-size: 11px; font-variant-numeric: tabular-nums; width: 46px; text-align: right; flex-shrink: 0; }
+  .ax-color { color: var(--ax-color); } .ax-bar { background: var(--ax-color); }
+  .ay-color { color: var(--ay-color); } .ay-bar { background: var(--ay-color); }
+  .az-color { color: var(--az-color); } .az-bar { background: var(--az-color); }
+
+  /* GPS card */
+  .gps-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .gps-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .gps-item label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; display: block; margin-bottom: 3px; }
+  .gps-item span { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text); word-break: break-all; }
+  .gps-acc { font-size: 10px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+  /* Button */
+  .start-btn {
+    width: 100%; padding: 14px;
+    background: transparent;
+    border: 1px solid rgba(0,230,118,0.4);
+    border-radius: 10px;
+    color: var(--green);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .start-btn:hover { background: rgba(0,230,118,0.06); border-color: rgba(0,230,118,0.7); }
+  .start-btn:active { transform: scale(0.98); }
+  .start-btn:disabled { color: var(--muted); border-color: var(--border); cursor: default; }
+
+  .hint { font-size: 10px; color: var(--muted); text-align: center; letter-spacing: 0.05em; padding-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="cam-section" id="camSection">
+  <video id="video" autoplay playsinline muted></video>
+  <div class="no-cam-msg" id="noCam">
+    <div style="font-size:28px">&#128247;</div>
+    <div>点击下方按钮启动摄像头</div>
+  </div>
+  <div class="cam-hud" id="camHud" style="display:none">
+    <div class="cam-corner tl"></div>
+    <div class="cam-corner tr"></div>
+    <div class="cam-corner bl"></div>
+    <div class="cam-corner br"></div>
+    <div class="cam-crosshair"></div>
+    <div class="cam-label">&#x25CF; REAR CAM</div>
+    <div class="cam-status-bar">
+      <span class="cam-status-text" id="camStatusText">LIVE</span>
+      <span class="cam-status-text"><span class="rec-dot"></span>REC</span>
+    </div>
+  </div>
+</div>
+
+<div class="cards">
+  <!-- Accelerometer -->
+  <div class="card">
+    <div class="card-head"><div class="dot" id="accelDot"></div>加速度计</div>
+    <div class="axis-row">
+      <div class="axis-lbl ax-color">X</div>
+      <div class="axis-bar-bg"><div class="axis-bar ax-bar" id="bax"></div></div>
+      <div class="axis-val ax-color" id="ax">—</div>
+    </div>
+    <div class="axis-row">
+      <div class="axis-lbl ay-color">Y</div>
+      <div class="axis-bar-bg"><div class="axis-bar ay-bar" id="bay"></div></div>
+      <div class="axis-val ay-color" id="ay">—</div>
+    </div>
+    <div class="axis-row" style="margin-bottom:0">
+      <div class="axis-lbl az-color">Z</div>
+      <div class="axis-bar-bg"><div class="axis-bar az-bar" id="baz"></div></div>
+      <div class="axis-val az-color" id="az">—</div>
+    </div>
+  </div>
+
+  <!-- Gyroscope -->
+  <div class="card">
+    <div class="card-head"><div class="dot" id="gyroDot"></div>陀螺仪</div>
+    <div class="axis-row">
+      <div class="axis-lbl ax-color">α</div>
+      <div class="axis-bar-bg"><div class="axis-bar ax-bar" id="bgx"></div></div>
+      <div class="axis-val ax-color" id="gx">—</div>
+    </div>
+    <div class="axis-row">
+      <div class="axis-lbl ay-color">β</div>
+      <div class="axis-bar-bg"><div class="axis-bar ay-bar" id="bgy"></div></div>
+      <div class="axis-val ay-color" id="gy">—</div>
+    </div>
+    <div class="axis-row" style="margin-bottom:0">
+      <div class="axis-lbl az-color">γ</div>
+      <div class="axis-bar-bg"><div class="axis-bar az-bar" id="bgz"></div></div>
+      <div class="axis-val az-color" id="gz">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- GPS -->
+<div class="gps-card">
+  <div class="card-head"><div class="dot" id="gpsDot"></div>GPS 定位</div>
+  <div class="gps-grid">
+    <div class="gps-item"><label>纬度</label><span id="lat">—</span></div>
+    <div class="gps-item"><label>经度</label><span id="lng">—</span></div>
+    <div class="gps-item"><label>海拔 (m)</label><span id="alt">—</span></div>
+  </div>
+  <div class="gps-acc" id="gpsAcc">等待启动...</div>
+</div>
+
+<button class="start-btn" id="startBtn">[ 启动所有传感器 ]</button>
+<div class="hint">需要 HTTPS 环境 · 请允许摄像头 / 位置权限</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function setDot(id, state) {
+  const el = $(id);
+  el.className = 'dot' + (state === 'on' ? ' on' : state === 'err' ? ' err' : '');
+}
+
+function clamp(v, mn, mx) { return Math.min(Math.max(v, mn), mx); }
+
+function setBar(id, val, max) {
+  $(id).style.width = clamp(Math.abs(val) / max * 100, 0, 100).toFixed(1) + '%';
+}
+
+function fmt(v, dec) {
+  dec = dec === undefined ? 2 : dec;
+  return (v >= 0 ? '+' : '') + v.toFixed(dec);
+}
+
+// Camera
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    const vid = $('video');
+    vid.srcObject = stream;
+    await vid.play();
+    $('noCam').style.display = 'none';
+    $('camHud').style.display = 'block';
+    const track = stream.getVideoTracks()[0];
+    const s = track.getSettings();
+    $('camStatusText').textContent = (s.facingMode === 'environment' ? '后置' : '前置') + ' · ' + (s.width || '?') + 'x' + (s.height || '?');
+  } catch (e) {
+    $('noCam').innerHTML = '<div style="font-size:20px">&#10006;</div><div style="color:#ff5252">摄像头权限被拒绝</div><div style="font-size:10px;margin-top:4px">' + e.message + '</div>';
+  }
+}
+
+// Motion sensors
+function startMotion() {
+  if (typeof DeviceMotionEvent === 'undefined') {
+    setDot('accelDot', 'err'); setDot('gyroDot', 'err');
+    ['ax','ay','az','gx','gy','gz'].forEach(id => $(id).textContent = 'N/A');
+    return;
+  }
+
+  const attach = () => {
+    window.addEventListener('devicemotion', e => {
+      const a = e.accelerationIncludingGravity || {};
+      const g = e.rotationRate || {};
+      const ax = a.x||0, ay = a.y||0, az = a.z||0;
+      const gx = g.alpha||0, gy = g.beta||0, gz = g.gamma||0;
+      $('ax').textContent = fmt(ax); setBar('bax', ax, 20);
+      $('ay').textContent = fmt(ay); setBar('bay', ay, 20);
+      $('az').textContent = fmt(az); setBar('baz', az, 20);
+      $('gx').textContent = fmt(gx, 1); setBar('bgx', gx, 360);
+      $('gy').textContent = fmt(gy, 1); setBar('bgy', gy, 360);
+      $('gz').textContent = fmt(gz, 1); setBar('bgz', gz, 360);
+      setDot('accelDot', 'on'); setDot('gyroDot', 'on');
+    }, true);
+  };
+
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(s => { if (s === 'granted') attach(); else { setDot('accelDot','err'); setDot('gyroDot','err'); } })
+      .catch(() => { setDot('accelDot','err'); setDot('gyroDot','err'); });
+  } else {
+    attach();
+  }
+}
+
+// GPS
+function startGPS() {
+  if (!navigator.geolocation) {
+    setDot('gpsDot', 'err');
+    $('gpsAcc').textContent = '浏览器不支持定位';
+    return;
+  }
+  $('gpsAcc').textContent = '正在获取位置...';
+  navigator.geolocation.watchPosition(
+    pos => {
+      const c = pos.coords;
+      $('lat').textContent = c.latitude.toFixed(6);
+      $('lng').textContent = c.longitude.toFixed(6);
+      $('alt').textContent = c.altitude != null ? c.altitude.toFixed(1) : '—';
+      $('gpsAcc').textContent = '精度 ±' + c.accuracy.toFixed(0) + ' m  |  ' + new Date().toLocaleTimeString();
+      setDot('gpsDot', 'on');
+    },
+    err => {
+      setDot('gpsDot', 'err');
+      const msgs = { 1:'位置权限被拒绝', 2:'无法获取位置', 3:'定位超时' };
+      $('gpsAcc').textContent = msgs[err.code] || err.message;
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+  );
+}
+
+$('startBtn').addEventListener('click', () => {
+  $('startBtn').disabled = true;
+  $('startBtn').textContent = '[ 传感器启动中... ]';
+  startCamera();
+  startMotion();
+  startGPS();
+  setTimeout(() => { $('startBtn').textContent = '[ 传感器运行中 ]'; }, 1500);
+});
+</script>
+</body>
+</html>
